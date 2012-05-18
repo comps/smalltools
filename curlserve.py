@@ -29,10 +29,6 @@ def parse_uri(uri):
 
     # sanitize
     uri = os.path.normpath(uri)
-    if os.path.isabs(uri):
-        # instead of removing leading slash (causing empty string when
-        # uri == '/', simply add dot to the beginning, forcing ./<uri>
-        uri = '.' + uri
 
     return (proto, uri)
 
@@ -222,7 +218,10 @@ class usable_tcp_server(SocketServer.ThreadingTCPServer):
 
 
 def main():
-    s_addr = ('', 8080)
+    # chroot to server's servedir
+    os.chroot(os.getcwd())
+
+    s_addr = ('', 80)
     server = usable_tcp_server(s_addr, req_handler)
     server.serve_forever()
 
