@@ -5,9 +5,14 @@ import os, sys
 import socket, struct
 import tarfile
 
+from pwd import getpwnam
+from grp import getgrnam
+
 from glob import glob
 import re
 
+
+## HELPERS ##
 
 # given a request in the form of a string similar to 'GET /a/b HTTP/1.1',
 # returns 3-member tuple - request type (GET), path (/a/b), protocol (HTTP/1.1)
@@ -18,20 +23,22 @@ def parse_req(req):
 
 # given a raw URI from client,
 # returns 2-member tuple - "protocol" and sanitized path
-# (ie. /tar://a/b would return [0] == "tar", [1] == "a/b",
-#      just /a/b  would return [0] == "" , [1] == "a/b")
+# (ie. /tar//a/b would return [0] == "tar", [1] == "/a/b",
+#      ///a/b    would return [0] == ''   , [1] == "/a/b"
+#      just /a/b would return [0] == None , [1] == "/a/b")
 def parse_uri(uri):
     # find protocol
-    proto = re.match('/(.+)://', uri)
+    proto = re.match('/([^/]+)//', uri)
     if proto:
         proto = proto.group(1)
-        uri = re.split('/.+:/', uri, 1)[1]
+        uri = re.split('/[^/]+/', uri, 1)[1]
+    else:
+        proto = None
 
     # sanitize
     uri = os.path.normpath(uri)
 
     return (proto, uri)
-
 
 # class able to contain headers, scanned as 'hdrname: hdrvalue'
 class headers():
@@ -65,60 +72,114 @@ class headers():
 #        for i in self.hdrs:
 #            f.write(i[0] + ': ' + i[1] + '\r\n')
 
+
 # the actual request-handling class, instantiated for each client
 class req_handler(SocketServer.StreamRequestHandler):
 
     # send an error message to the client (which will still show up
     # as regular stdout data) and forcibly close the connection using
     # (hopefully) TCP RST packet, resulting in a connection reset error
-    def error_close(self, msg='invalid request'):
-        self.request.send(msg + '\n')
+    def error_close(self, msg=None):
+        if msg:
+            try:
+                self.request.send(msg + '\n')
+            except IOError: pass
         self.request.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
                                 struct.pack('ii', 1, 0))
         self.request.close()
 
-    # curl and/or others need \r\n at the end
-    def send_response(self, msg):
-        self.wfile.write(msg + '\r\n')
-
-
-    # send a listing of the current working directory,
-    # append '/' to directory entries
-    def sendfilelist(self, path):
+    # error-handling wrapper around wfile.write()
+    def send_data(self, data):
         try:
-            contents = os.listdir(path)
-        except OSError as err:
-            self.error_close('error listing directory: ' + err.strerror)
+            self.wfile.write(data)
+        except IOError:
+            self.error_close()
             return False
+        return True
 
-        contents.sort()
+    # send a regular file or a directory listing
+    def file_send(self):
+        path = glob(self.path)
+        if not path:
+            self.error_close('shell glob empty - no such file or directory')
+            return
+        elif len(path) > 1:
+            msg = ''
+            for i in path:
+                msg += '\n' + i
+            self.error_close('shell glob returned more than one path:' + msg)
+            return
 
-        # append '/' to directories
-        for i,j in enumerate(contents):
-            if os.path.isdir(path + '/' + j):
-                contents[i] += '/'
+        path = path[0]
 
-        # stringify
-        contents = '\n'.join(str(n) for n in contents)
-        contents += '\n'
+        if os.path.isdir(path):
+            # list directory
+            try:
+                contents = os.listdir(path)
+            except OSError as err:
+                self.error_close('error listing directory: ' + err.strerror)
+                return
 
-        self.request.send(contents)
+            contents.sort()
 
-    # send a single (regular) file, identified by path, to the client
-    def sendfile(self, path):
-        chunksize = 65536
+            # append '/' to directories
+            for i,j in enumerate(contents):
+                if os.path.isdir(path + '/' + j):
+                    contents[i] += '/'
+
+            # stringify
+            contents = '\n'.join(str(n) for n in contents)
+            contents += '\n'
+
+            self.send_data(contents)
+
+        else:
+            # simply send a regular file
+            chunksize = 65536
+            try:
+                fd = open(path, 'r');
+            except IOError as err:
+                self.error_close('error sending file: ' + err.strerror)
+                return
+
+            while 1:
+                buff = fd.read(chunksize)
+                if not buff:
+                    break
+                if not self.send_data(buff):
+                    break
+
+    # send a tar (compress=''), tgz (compress='gz') or a tbz2 (compress='bz2')
+    # made up from the globbed directory listing, added recursively
+    def tar_send(self, compress=''):
+        paths = glob(self.path)
+        if not paths:
+            self.error_close('shell glob empty - no such file or directory')
+            return
+
         try:
-            fd = open(path, 'r');
-        except IOError as err:
-            self.error_close('error sending file: ' + err.strerror)
-            return False
+            tarobj = tarfile.open(mode='w|'+compress, fileobj=self.wfile)
+        except IOError:
+            self.error_close('error opening tar stream')
+            return
 
-        while 1:
-            buff = fd.read(chunksize)
-            if not buff:
-                break
-            self.request.send(buff)
+        # find common prefix
+        prefix = os.path.commonprefix(paths)
+        #prefix = os.path.normpath(prefix)
+        prefix = os.path.dirname(prefix) + '/'
 
+        for i in paths:
+            # substract prefix
+            j = i.replace(prefix, '')
+            try:
+                tarobj.add(name=i, arcname=j)
+            except IOError as err:
+                self.error_close('tar add error: ' + err.strerror)
+                return
+
+        try:
+            tarobj.close()
+        except IOError: pass
 
     # main client handler executed by __init__ of this class
     def handle(self):
@@ -139,7 +200,7 @@ class req_handler(SocketServer.StreamRequestHandler):
 
         # sanity check
         if not reqtype or not path:
-            error_close()
+            error_close('invalid request')
 
         # sanitize path, parse out "protocol"
         self.proto, self.path = parse_uri(path)
@@ -153,23 +214,24 @@ class req_handler(SocketServer.StreamRequestHandler):
         else:
             error_close('unsupported request type: ' + reqtype)
 
-#        print "reqtype: " + reqtype + ", path: " + path
-#        if proto:
-#            print "(proto: " + proto + ")"
-#        for hdr in head.all():
-#            print "hdrname: " + hdr[0] + ", hdrdata: " + hdr[1]
-#        print
-
 
     def handle_GET(self):
-        if os.path.isdir(self.path):
-            # if requested path is directory, print its contents
-            self.sendfilelist(self.path)
+        if self.proto == 'tar':
+            self.tar_send()
+        elif self.proto == 'tar.gz' \
+          or self.proto == 'targz' \
+          or self.proto == 'tgz':
+            self.tar_send(compress='gz')
+        # bzip2 module not available
+        #elif self.proto == 'tar.bz2' \
+        #  or self.proto == 'tarbz2' \
+        #  or self.proto == 'tbz2':
+        #    self.tar_send(compress='bz2')
+        elif self.proto == 'file' \
+          or self.proto == None:
+            self.file_send()
         else:
-            # send just the regular file
-            self.sendfile(self.path)
-
-#        print 'success!\n'
+            self.error_close('unknown protocol')
 
 
     def handle_PUT(self):
@@ -177,11 +239,11 @@ class req_handler(SocketServer.StreamRequestHandler):
 
         size = self.head.get('Content-Length')
         if not size:
-            self.error_close()
+            self.error_close('invalid request')
 
         size = int(size)
 
-        self.send_response("HTTP/1.1 100 Continue")
+        self.send_data("HTTP/1.1 100 Continue\r\n")
 
         # na zaklade self.proto se rozhodnout, co s daty delat
         # (zapsat do globnute cesty/souboru, zavolat tar, ..)
@@ -205,7 +267,7 @@ class req_handler(SocketServer.StreamRequestHandler):
             if size <= 0:
                 break
 
-        self.send_response("HTTP/1.1 200 OK")
+        self.send_data("HTTP/1.1 200 OK\r\n")
 #        print 'finished!'
 #        return
 
@@ -218,11 +280,26 @@ class usable_tcp_server(SocketServer.ThreadingTCPServer):
 
 
 def main():
+    user = 'user'
+    group = 'user'
+    s_addr = ('', 80)
+
+    # gather uid/gid info based on name
+    uid = getpwnam(user).pw_uid
+    gid = getgrnam(group).gr_gid
+
     # chroot to server's servedir
     os.chroot(os.getcwd())
 
-    s_addr = ('', 80)
+    # instantiate the server
     server = usable_tcp_server(s_addr, req_handler)
+
+    # drop privs
+    os.setgroups([])
+    os.setregid(gid, gid)
+    os.setreuid(uid, uid)
+
+    # serve 4ever!
     server.serve_forever()
 
 main()
