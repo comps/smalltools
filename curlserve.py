@@ -147,6 +147,19 @@ class req_handler(SocketServer.StreamRequestHandler):
                 self.error_close('error sending file: ' + err.strerror)
                 return
 
+            try:
+                size = os.path.getsize(path)
+            except OSError as err:
+                self.error_close('error sending file: ' + err.strerror)
+                return
+
+            heads = 'HTTP/1.0 200 OK\r\n'
+            heads += 'Content-Length: ' + str(size) + '\r\n'
+            heads += '\r\n\r\n'
+
+            if not self.send_data(heads):
+                return
+
             while 1:
                 buff = fd.read(chunksize)
                 if not buff:
