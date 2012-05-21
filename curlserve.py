@@ -136,6 +136,11 @@ class req_handler(SocketServer.StreamRequestHandler):
             contents = '\n'.join(str(n) for n in contents)
             contents += '\n'
 
+            heads = 'HTTP/1.0 200 OK\r\n'
+            heads += 'Content-Length: ' + str(len(contents)) + '\r\n'
+            heads += '\r\n'
+            contents = heads + contents
+
             self.send_data(contents)
 
         else:
