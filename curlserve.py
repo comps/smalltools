@@ -227,11 +227,10 @@ class req_handler(SocketServer.StreamRequestHandler):
           or self.proto == 'targz' \
           or self.proto == 'tgz':
             self.tar_send(compress='gz')
-        # bzip2 module not available
-        #elif self.proto == 'tar.bz2' \
-        #  or self.proto == 'tarbz2' \
-        #  or self.proto == 'tbz2':
-        #    self.tar_send(compress='bz2')
+        elif self.proto == 'tar.bz2' \
+          or self.proto == 'tarbz2' \
+          or self.proto == 'tbz2':
+            self.tar_send(compress='bz2')
         elif self.proto == 'file' \
           or self.proto == None:
             self.file_send()
