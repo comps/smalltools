@@ -59,15 +59,20 @@ class headers():
                 return i[1]
         return None
 
-    def getall(self):    # debug-only?
-        return self.hdrs
-
 # UNUSED (but working)
 #    def add(self, name, value):
 #        if not name or not value:
 #            return False
-#        self.hdrs += [tuple([name.strip(), value.strip()])]
-
+#        self.hdrs += [tuple([str(name).strip(), str(value).strip()])]
+#
+#    def getallstrings(self):
+#        strs = []
+#        for i in self.hdrs:
+#            strs += [i[0] + ': ' + i[1] + '\r\n']
+#        # add headers termination (empty doubleline)
+#        strs += ['\r\n\r\n']
+#        return strs
+#
 #    def write(self, f):
 #        for i in self.hdrs:
 #            f.write(i[0] + ': ' + i[1] + '\r\n')
