@@ -155,7 +155,7 @@ class req_handler(SocketServer.StreamRequestHandler):
 
             heads = 'HTTP/1.0 200 OK\r\n'
             heads += 'Content-Length: ' + str(size) + '\r\n'
-            heads += '\r\n\r\n'
+            heads += '\r\n'
 
             if not self.send_data(heads):
                 return
