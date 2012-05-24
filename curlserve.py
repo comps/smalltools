@@ -106,7 +106,7 @@ class req_handler(SocketServer.StreamRequestHandler):
     def file_send(self):
         path = glob(self.path)
         if not path:
-            self.error_close('shell glob empty - no such file or directory')
+            self.error_close('shell glob empty - no such file or directory: ' + self.path)
             return
         elif len(path) > 1:
             msg = ''
@@ -177,13 +177,13 @@ class req_handler(SocketServer.StreamRequestHandler):
     def tar_send(self, compress=''):
         paths = glob(self.path)
         if not paths:
-            self.error_close('shell glob empty - no such file or directory')
+            self.error_close('shell glob empty - no such file or directory: ' + self.path)
             return
 
         try:
             tarobj = tarfile.open(mode='w|'+compress, fileobj=self.wfile)
-        except IOError:
-            self.error_close('error opening tar stream')
+        except IOError as err:
+            self.error_close('error opening tar stream: ' + err.strerror)
             return
 
         # find common prefix
