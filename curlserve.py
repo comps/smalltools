@@ -377,39 +377,21 @@ class req_handler(SocketServer.StreamRequestHandler):
 
 
     def handle_PUT(self):
-        chunksize = 65536
-
-        size = self.head.get('Content-Length')
-        if not size:
-            self.error_close('invalid request')
-
-        size = int(size)
-
-        # na zaklade self.proto se rozhodnout, co s daty delat
-        # (zapsat do globnute cesty/souboru, zavolat tar, ..)
-
-#        f = open("recvd", "w")
-        while 1:
-            if size > chunksize:
-                readlen = chunksize
-            else:
-                readlen = size
-
-            print 'reading', readlen, 'bytes'
-#            data = self.request.recv(readlen)
-            data = self.rfile.read(readlen)
-#            f.write(data)
-#            print data
-
-            # zde zapisovat data podle rozhodnuti vyse
-
-            size -= chunksize
-            if size <= 0:
-                break
-
-        self.send_data("HTTP/1.0 200 OK\r\n")
-#        print 'finished!'
-#        return
+        if self.proto == 'tar':
+            self.tar_recv()
+        elif self.proto == 'tar.gz' \
+          or self.proto == 'targz' \
+          or self.proto == 'tgz':
+            self.tar_recv(compress='gz')
+        elif self.proto == 'tar.bz2' \
+          or self.proto == 'tarbz2' \
+          or self.proto == 'tbz2':
+            self.tar_recv(compress='bz2')
+        elif self.proto == 'file' \
+          or self.proto == None:
+            self.file_recv()
+        else:
+            self.error_close('unknown protocol')
 
 
 # server class, just to re-define SO_REUSEADDR
