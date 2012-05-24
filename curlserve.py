@@ -172,6 +172,82 @@ class req_handler(SocketServer.StreamRequestHandler):
                 if not self.send_data(buff):
                     break
 
+    def file_recv(self):
+        path = glob(self.path)
+        if len(path) > 1:
+            msg = ''
+            for i in path:
+                msg += '\n' + i
+            self.error_close('shell glob returned more than one path:' + msg)
+            return
+
+        if path:
+            path = path[0]
+            if os.path.isdir(path):
+                self.error_close('path ' + path + ' exists and it is a directory')
+                return
+            else:
+                self.error_close('shell glob on full path not empty'
+                                 + '\nrefusing to overwrite: ' + path)
+                return
+
+        # "self.path" should now be a non-existing path to a new file,
+        # possibly with shell glob symbols in the path,
+        # so resolve the path and append filename
+
+        filename = os.path.basename(self.path)
+        pathname = os.path.dirname(self.path)
+
+        pathname = glob(pathname)
+        if not pathname:
+            self.error_close('shell glob empty - no such file or directory: ' + os.path.dirname(self.path))
+            return
+        elif len(pathname) > 1:
+            msg = ''
+            for i in pathname:
+                msg += '\n' + i
+            self.error_close('shell glob returned more than one path:' + msg)
+            return
+
+        pathname = pathname[0]
+
+        if not os.path.isdir(pathname):
+            self.error_close('path ' + pathname + ' exists, but it is NOT a directory')
+            return
+
+        # "pathname+filename" should now contain a valid destination path
+        path = pathname + '/' + filename
+
+        size = self.head.get('Content-Length')
+        if not size:
+            self.error_close('invalid request, missing Content-Length')
+
+        size = int(size)
+
+        try:
+            fd = open(path, 'w');
+        except IOError as err:
+            self.error_close('error receiving file: ' + err.strerror)
+            return
+
+        self.send_data("HTTP/1.0 100 Continue\r\n")
+
+        chunksize = 65536
+        while 1:
+            if size > chunksize:
+                readlen = chunksize
+            else:
+                readlen = size
+
+            data = self.rfile.read(readlen)
+            fd.write(data)
+
+            size -= chunksize
+            if size <= 0:
+                break
+
+        self.send_data("HTTP/1.0 200 OK\r\n")
+
     # send a tar (compress=''), tgz (compress='gz') or a tbz2 (compress='bz2')
     # made up from the globbed directory listing, added recursively
     def tar_send(self, compress=''):
