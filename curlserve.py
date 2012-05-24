@@ -265,7 +265,7 @@ class req_handler(SocketServer.StreamRequestHandler):
 
         size = int(size)
 
-        self.send_data("HTTP/1.1 100 Continue\r\n")
+        self.send_data("HTTP/1.0 100 Continue\r\n")
 
         # na zaklade self.proto se rozhodnout, co s daty delat
         # (zapsat do globnute cesty/souboru, zavolat tar, ..)
@@ -289,7 +289,7 @@ class req_handler(SocketServer.StreamRequestHandler):
             if size <= 0:
                 break
 
-        self.send_data("HTTP/1.1 200 OK\r\n")
+        self.send_data("HTTP/1.0 200 OK\r\n")
 #        print 'finished!'
 #        return
 
