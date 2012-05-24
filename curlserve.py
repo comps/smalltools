@@ -246,6 +246,8 @@ class req_handler(SocketServer.StreamRequestHandler):
             tarobj.close()
         except IOError: pass
 
+        self.send_data("HTTP/1.0 200 OK\r\n")
+
     # main client handler executed by __init__ of this class
     def handle(self):
         readmax = 8192    # filename can be 4096 bytes long
