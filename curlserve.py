@@ -204,6 +204,48 @@ class req_handler(SocketServer.StreamRequestHandler):
             tarobj.close()
         except IOError: pass
 
+    # recv a tar (compress=''), tgz (compress='gz') or a tbz2 (compress='bz2')
+    # and extract it to a specified path
+    def tar_recv(self, compress=''):
+        # curl appends the file name to the PUT path, but only if there's a slash
+        # at the end of the URI - since there's no way to detect that, don't care
+        # about the URI - if it doesn't exist, warn the user
+        # - to PUT something to '/', append dot like /tar//.
+
+        path = glob(self.path)
+        if not path:
+            self.error_close('shell glob empty - no such file or directory: ' + self.path
+                             + '\nhint: don\'t put slash at the end of the URI')
+            return
+        elif len(path) > 1:
+            msg = ''
+            for i in path:
+                msg += '\n' + i
+            self.error_close('shell glob returned more than one path:' + msg)
+            return
+
+        path = path[0]
+
+        try:
+            tarobj = tarfile.open(mode='r|'+compress, fileobj=self.rfile)
+        except IOError as err:
+            self.error_close('error opening tar stream: ' + err.strerror)
+            return
+
+        self.send_data("HTTP/1.0 100 Continue\r\n")
+
+        try:
+            # extractall doesn't report any permission errors, ie. when
+            # path= is read-only -- so we can't report back those problems
+            tarobj.extractall(path)
+        except TarError as err:
+            self.error_close('error extracting tar stream: ' + err.strerror)
+            return
+
+        try:
+            tarobj.close()
+        except IOError: pass
+
     # main client handler executed by __init__ of this class
     def handle(self):
         readmax = 8192    # filename can be 4096 bytes long
