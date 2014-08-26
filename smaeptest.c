@@ -10,8 +10,8 @@ static ssize_t
 smap_write(struct file *file, const char *buffer, size_t len, loff_t *off)
 {
 	/* simply read the address directly, without copy_from_user() */
-	char junk[16];
-	memcpy(junk, buffer, sizeof(junk));
+	volatile char junk = *buffer;
+	(void)junk;
 	return len;
 }
 
