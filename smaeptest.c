@@ -1,7 +1,6 @@
 #include <linux/debugfs.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <asm/uaccess.h>        /* for copy_*_user */
 
 MODULE_LICENSE("GPL");
 
