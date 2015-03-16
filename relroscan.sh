@@ -31,11 +31,11 @@ has_runpath && echo -n "runpath " || echo -n "norunpath "
 }
 
 # main
-[ "$#" -ge 1 ] || { echo "usage: $0 [-r] <path> [path] ..." 1>&2; exit 1; }
+[ "$#" -ge 1 ] || { echo "usage: $0 [-p] <path> [path] ..." 1>&2; exit 1; }
 getrpm=
-while getopts ":r" opt; do
+while getopts ":p" opt; do
   case $opt in
-    r) getrpm=1 ;;
+    p) getrpm=1 ;;
     *) echo "invalid option: $OPTARG" 1>&2; exit 1 ;;
   esac
 done
