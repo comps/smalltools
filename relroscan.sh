@@ -1,5 +1,6 @@
 #!/bin/bash
 
+is_elf() { [[ $(head -c4 "$1") = $'\x7FELF' ]]; }
 echo_file_properties()
 {
 file="$1"
@@ -29,13 +30,28 @@ has_rpath && echo -n "rpath " || echo -n "norpath "
 has_runpath && echo -n "runpath " || echo -n "norunpath "
 }
 
-is_elf() { [[ $(head -c4 "$1") = $'\x7FELF' ]]; }
+# main
+[ "$#" -ge 1 ] || { echo "usage: $0 [-r] <path> [path] ..." 1>&2; exit 1; }
+getrpm=
+while getopts ":r" opt; do
+  case $opt in
+    r) getrpm=1 ;;
+    *) echo "invalid option: $OPTARG" 1>&2; exit 1 ;;
+  esac
+done
+shift $((OPTIND-1))
 
-[ "$#" -ge 1 ] || { echo "usage: $0 <path> [path] ..."; exit 1; }
 for path in "$@"; do
   while IFS= read -r -d '' file; do
     is_elf "$file" || continue
     echo_file_properties "$file"
-    echo "-- $file"
-  done < <(find -H "$path" -type f -print0)
+    echo -n "-- $file"
+    if [ "$getrpm" ]; then
+      getrpm=$(rpm -qf --qf '%{NAME}.%{ARCH}' "$file") && echo -n " -- $getrpm"
+    fi
+    echo
+  done < <(find -H "$path" -type f -size +3c -print0)
+  # -H          don't follow symlinks
+  # -type f     only regular files
+  # -size +3c   needs to have at least '\x7fELF'
 done
