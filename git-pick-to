@@ -1,0 +1,42 @@
+#!/bin/bash
+
+[ "$1" = '-s' ] && { spawnshell=1; shift; } || spawnshell=
+if [ "$#" -lt 2 -o "$1" = "-h" -o "$1" = "--help" ]; then
+	echo "usage: git-pick-to [-s] <dst-ref> [dst-ref]... <revspec>"
+	echo "(-s: spawn a shell after each successful rebase)"
+	exit 1
+fi
+
+dstrefs=()
+while [ "$#" -gt 1 ]; do
+	dstrefs+=("$1")
+	shift
+done
+revspec="$1"
+if [ "${#dstrefs[@]}" -lt 1 -o -z "$revspec" ]; then
+	echo "error: no dst-ref or revspec specified"
+	exit 1
+fi
+
+set -o pipefail
+set -e
+
+# fail on modified worktree
+git update-index --refresh
+
+# transform revspec into from/to (aka upstream/tip)
+from=$(git rev-list "$revspec" | tail -n 1)
+from=$(git rev-parse "$from"~)
+to=$(git rev-list "$revspec" | head -n 1)
+
+echo -n "will pick $(git rev-list --count "$revspec") commits [y/n]: "
+read reply
+[ "$reply" = "y" ] || exit 0
+
+git checkout -q --detach
+for ref in "${dstrefs[@]}"; do
+	echo -e "\033[1m::: ${ref} :::\033[0m"
+	git rebase --force-rebase --onto "$ref" "$from" "$to"
+	[ "$spawnshell" ] && \
+		PS1='\[\033[01;34m\]\$\[\033[00m\] ' bash --noprofile --norc
+done

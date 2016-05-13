@@ -1,0 +1,53 @@
+#!/bin/sh -e
+#
+# iterates over commits in a specified <rangespec>
+# and cleans whitespace errors in-place
+# = rewrites history, no single cleaning commit!
+#
+# able to deal with commits containing binary changes,
+#
+
+if [ "$#" -ne 1 -o "$1" = "-h" -o "$1" = "--help" ]; then
+	echo "usage: git-whitespace-cleanup <revspec>"
+	exit 1
+fi
+revspec="$1"
+
+set -o pipefail
+set -e
+
+# fail on modified worktree
+git update-index --refresh
+
+echo -n "will filter $(git rev-list --count "$revspec") commits [y/n]: "
+read reply
+[ "$reply" = "y" ] || exit 0
+
+# TODO: git-rebase --whitespace=fix works only when it's actually doing
+#       a proper rebase (applying patches), not when --no-ff / --force-rebase
+#       which triggers cherry-pick without the --whitespace option
+#       -- so we have to manually apply commits ourselves
+
+tofilter=$(git rev-list --reverse "$revspec")
+base=$(git rev-list "$revspec" | tail -n 1)
+base=$(git rev-parse "$base"~)
+git checkout -q --detach "$base"
+
+for commit in $tofilter; do
+	# if empty, just cherry-pick
+	if [ -z "$(git diff-tree "$commit"~1 "$commit")" ]; then
+		git cherry-pick --allow-empty "$commit"
+	else
+		git format-patch "$commit" -1 --stdout | git am --whitespace=fix
+	fi
+done
+
+old=$(echo "$tofilter" | tail -n 1)
+new=$(git rev-parse HEAD)
+
+echo
+echo -e "\033[1m==========================================\033[0m"
+echo -ne "diff; old \033[1m$(git rev-parse --short $old)\033[0m"
+echo -e " , new \033[1m$(git rev-parse --short $new)\033[0m:"
+echo
+git diff "$old" "$new"
