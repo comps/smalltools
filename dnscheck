@@ -1,0 +1,76 @@
+#!/bin/bash
+#
+# dnscheck: mass dns checker
+#
+# usage: dnscheck [server1] [server2]... < file_with_hosts
+
+# stdin: line-separated or ' | '-separated entries (hosts)
+# args: dig arguments
+resolv_short() {
+	local out=
+	declare -a ents results
+	mapfile -t ents < <(sed 's/ | /\n/g')
+	for host in "${ents[@]}"; do
+		out=$(dig +short "$@" "$host" | sed 's/\.$//') || continue
+		results+=($out)  # let newlines delimit array members
+	done
+	out="${results[*]}"
+	out="${out// / | }" # to |-separated strings
+	echo "$out"
+}
+
+mapfile -t hosts  #stdin
+
+maxlen=0
+for ((i=0;i<${#hosts[@]};i++)); do
+	[ "${#hosts[i]}" -gt "$maxlen" ] && maxlen=${#hosts[i]}
+done
+maxlen=$((maxlen+2))
+declare -a pretty_hosts
+# pad with spaces to align all hostnames
+for ((i=0;i<${#hosts[@]};i++)); do
+	spaces=$(( $maxlen - ${#hosts[i]} ))
+	eval pretty_hosts[$i]=\"\${hosts[$i]}\$\(printf %${spaces}s\)\"
+done
+
+resolve_hosts() {
+	local ns="$1"
+	[ "$ns" ] && ns="@${ns}"
+
+	for ((i=0;i<${#hosts[@]};i++)); do
+		local addr4= addr6= ptr4= ptr6=
+
+		echo -n "${pretty_hosts[$i]}"
+		local fqdn="${hosts[$i]}"
+
+		addr4=$(resolv_short $ns A <<<"$fqdn") || { echo;continue; }
+		echo -ne "ip4:$addr4"
+		addr6=$(resolv_short $ns AAAA <<<"$fqdn") || { echo;continue; }
+		echo -ne "\tip6:$addr6"
+
+		if [ "$addr4" ]; then
+			ptr4=$(resolv_short $ns PTR -x <<<"$addr4") || { echo;continue; }
+			echo -ne "\tptr4:$ptr4"
+		fi
+		if [ "$addr6" ]; then
+			ptr6=$(resolv_short $ns PTR -x <<<"$addr6") || { echo;continue; }
+			echo -ne "\tptr6:$ptr6"
+		fi
+
+		echo
+		[ "$ptr4" -a "$ptr4" != "$fqdn" ] && \
+			echo "$fqdn has invalid PTR for ipv4 $addr4: $ptr4" >&2
+		[ "$ptr6" -a "$ptr6" != "$fqdn" ] && \
+			echo "$fqdn has invalid PTR for ipv4 $addr6: $ptr6" >&2
+	done
+}
+
+if [ "$#" -gt 0 ]; then
+	for ns in "$@"; do
+		echo "::: $ns :::"
+		resolve_hosts "$ns"
+		echo
+	done
+else
+	resolve_hosts
+fi
