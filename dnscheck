@@ -8,15 +8,22 @@
 # args: dig arguments
 resolv_short() {
 	local out=
-	declare -a ents results
+	declare -a ents
+	mapfile -t ents < <(sed 's/ | /\n/g')
+	out=$(dig +short "$@" "${ents[@]}") || return 1
+	out=${out%.}; out=${out//.$'\n'/$'\n'}  # no trailing dots
+	echo "${out//$'\n'/ | }"  # to |-separated strings
+}
+# stdin: line-separated or ' | '-separated entries (names)
+# args: fqdn to compare them to
+check_ptr() {
+	local fqdn="$1"
+	declare -a ents
 	mapfile -t ents < <(sed 's/ | /\n/g')
 	for host in "${ents[@]}"; do
-		out=$(dig +short "$@" "$host" | sed 's/\.$//') || continue
-		results+=($out)  # let newlines delimit array members
+		[ "$host" = "$fqdn" ] || return 1
 	done
-	out="${results[*]}"
-	out="${out// / | }" # to |-separated strings
-	echo "$out"
+	return 0
 }
 
 mapfile -t hosts  #stdin
@@ -58,10 +65,10 @@ resolve_hosts() {
 		fi
 
 		echo
-		[ "$ptr4" -a "$ptr4" != "$fqdn" ] && \
-			echo "$fqdn has invalid PTR for ipv4 $addr4: $ptr4" >&2
-		[ "$ptr6" -a "$ptr6" != "$fqdn" ] && \
-			echo "$fqdn has invalid PTR for ipv4 $addr6: $ptr6" >&2
+		[ "$ptr4" ] && ! check_ptr "$fqdn" <<<"$ptr4" && \
+			echo "$fqdn has invalid PTR for IPv4" >&2
+		[ "$ptr6" ] && ! check_ptr "$fqdn" <<<"$ptr6" && \
+			echo "$fqdn has invalid PTR for IPv6" >&2
 	done
 }
 
