@@ -22,6 +22,12 @@ A quick overview
 * **ethtoolspeed** (2014) - Simple `LD_PRELOAD`able library to fake speeds
   reported by ethtool(8). For testing purposes.
 
+* **fake_egd** (2015) - Workaround for libvirt to feed qemu-based guests any
+  block device (ie. urandom) via virtio-rng. Made for political reasons; the
+  maintainer of libvirt in RHEL refused to acknowledge that urandom is secure
+  once seeded and libvirt had a hardcoded /dev/urandom check and error. This
+  was removed in later versions of libvirt.
+
 * **gitcmds** (2016) - Misc additional git commands and scripts to help my
   workflow.
 
@@ -42,3 +48,10 @@ A quick overview
 
 * **smaeptest** (2014) - A simple Linux kernel module to test if Intel SMEP /
   SMAP is working. Originally for Common Criteria testing.
+
+* **tcp_repeater** (2015/2017) - What it says on the tin; a daemon that listens
+  on a port (v1) or a range of ports (v2) and broadcasts any received TCP
+  payloads to all connected clients. Originally used for network-based serial
+  console for virtual machines where a conserver would connect to the repeater
+  and qemu-based guests would too. This mitigated conserver disconnect issues
+  when it was connecting directly to qemu and the qemu guest was rebooted.
