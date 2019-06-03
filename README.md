@@ -6,7 +6,8 @@ really need their own repositories. To keep commit histories clean, each utility
 is kept in its own branch with its own history.
 
 All tools and utilities in any branches of this repository are released under
-the license present in the LICENSE file.
+the license present in the LICENSE file next to this README.md file, unless
+specified otherwise in the header of a file.
 
 A quick overview
 ----------------
