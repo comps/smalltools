@@ -44,27 +44,6 @@ ldd_files()
         fi
     done < <(ldd "$src")
 }
-# also return all dependencies of all the libraries
-# - avoid duplicates and anything already existing under exist_tree/
-recursive_ldd_files_one()
-{
-    local src="$1" exist_tree="$2" lib=
-    while read lib; do
-        if [ ! ${seen["$lib"]+abc} ]; then
-            if [ "$exist_tree" -a -e "$exist_tree/./$lib" ]; then
-                continue
-            fi
-            echo "$lib"
-            seen["$lib"]=
-            recursive_ldd_files_one "$lib" "$exist_tree"
-        fi
-    done < <(ldd_files "$src")
-}
-recursive_ldd_files()
-{
-    declare -A seen
-    recursive_ldd_files_one "$@"
-}
 
 # like readlink, but print absolute path to target (which must exist)
 # (unlike -f, DO NOT resolve symlinks recursively, only one level)
@@ -133,7 +112,7 @@ for binary in "$@"; do
     # the binary itself (and its symlinks, see ie. /etc/alternatives/)
     recursive_copy "$jailroot" <<<"$binary"
     # its library deps
-    recursive_copy "$jailroot" < <(recursive_ldd_files "$binary" "$jailroot")
+    recursive_copy "$jailroot" < <(ldd_files "$binary")
 done
 
 # vim: sts=4 sw=4 et :
