@@ -36,7 +36,7 @@ class StateFile:
                 return dict()
 
 class JobKeeper:
-    def __init__(self, hub, jobfile, statefile=None, resched=None):
+    def __init__(self, hub, jobfile, statefile=None, resched=None, exportdir=None):
         self.session = requests.Session()
         self.session.headers.update({'Accept': 'application/json'})
         self.hub = hub
@@ -46,11 +46,14 @@ class JobKeeper:
         self.queued = None
         self.queued_time = None
         self.queued_delta_max = None
+        self.exportdir = exportdir
         if resched:
             self.queued_delta_max = timedelta(seconds=resched)
-#        self._update_job_xml()
         if statefile:
             self._load_state(statefile)
+        if exportdir:
+            if not os.path.isdir(exportdir) or not os.access(exportdir, os.W_OK):
+                raise RuntimeError(f"cannot create files in {exportdir}")
 
     def _load_state(self, path):
         self.state = StateFile(path)
@@ -69,13 +72,6 @@ class JobKeeper:
                 'running': list(self.running),
             }
             self.state.save(data)
-
-#    def _update_job_xml(self):
-#        """Re-read jobfile from disk."""
-#        with open(self.jobfile, 'r') as f:
-#            self.jobxml = f.read()
-#            h = hashlib.sha1(self.jobxml.encode())
-#            self.jobhash = h.hexdigest()
 
     def _submit_job(self):
         # read jobfile from disk on every submit, in case it changed
@@ -105,6 +101,11 @@ class JobKeeper:
             # uncommon, ie. command not found, raise an error
             res.check_returncode()
 
+    def _export_job(self, jobid, jdata):
+        if self.exportdir:
+            with open(os.path.join(self.exportdir, f'{jobid}.json'), 'w') as f:
+                json.dump(jdata, f, indent=2, default=str)
+
     def _query_bkr(self, idval, idtype='jobs'):
         try:
             r = self.session.get(self.hub+f'/{idtype}/{idval}')
@@ -113,32 +114,6 @@ class JobKeeper:
             print(str(e), file=sys.stderr)
             return None
         return r.json()
-
-#    @staticmethod
-#    def _aborted_with_nosystems(jdata):
-#        """Return True if any task in any recipe of the job did not match any
-#        systems."""
-#        for rs in jdata['recipesets']:
-#            for r in rs['machine_recipes']:
-#                if r['status'] != 'Aborted':
-#                    continue
-#                rdata = self._query_bkr(r['id'], 'recipes')
-#                if rdata:
-#                    nosystems = False
-#                    if rdata['status'] != 'Aborted':
-#                        continue
-#                    for t in rdata['tasks']:
-#                        if t['status'] != 'Warn':
-#                            continue
-#                        for res in t['results']:
-#                            if 'does not match any systems' in res['message']:
-#                                return True
-#        return False
-
-#    def _cancel_overtime_queued(self, jobid):
-#        """If a queued job is non-running for too long, cancel it."""
-#        if not self.queued_start:
-#
 
     def watch_jobs(self, max_running, delay, noloop=False):
         while True:
@@ -157,9 +132,7 @@ class JobKeeper:
                     logging.debug(f"running job {job} is finished:{finished} with {status}/{result}")
                     if finished:
                         self.running.remove(job)
-                        #if self._aborted_with_nosystems(jdata):
-                        #    logging.info(f"job {job} Aborted with 'does not match any systems'")
-                        #    self.jobxml = None  # force re-read
+                        self._export_job(job, jdata)
                         logging.info(f"yielding finished {(job, status, result)}")
                         yield (job, status, result)
                         self._save_state()
@@ -248,6 +221,9 @@ if __name__ == '__main__':
 
         Errors/warnings/debug go to stderr, finished jobs to stdout as space-delimited
         triples of jobid, status and result, ie. '12345 Completed Fail'.
+
+        For more details about finished job, use --export with a pre-existing directory
+        into which ${jobid}.json files will be saved before being reported on stdout.
         """)
     parser = argparse.ArgumentParser(description='Keep a Beaker job always available (Queued).',
                                      epilog=epilog,
@@ -258,6 +234,7 @@ if __name__ == '__main__':
     parser.add_argument('--sleep', metavar='N', type=int, default=60, help='extra secs spent sleeping in each loop')
     parser.add_argument('--max-running', metavar='N', type=int, default=2, help='maximum allowed Running jobs at any time')
     parser.add_argument('--re-sched', metavar='N', type=int, help='cancel and re-submit Queued task after N secs')
+    parser.add_argument('--export', metavar='DIR', help='export completed jobs as JSON files')
     parser.add_argument('--hub', metavar='URL', help='override autodetected Beaker hub URL')
     parser.add_argument('jobfile', metavar='job-file.xml', help='a Beaker job XML file path')
 
@@ -281,6 +258,7 @@ if __name__ == '__main__':
     jk = JobKeeper(statefile=args.state,
                    resched=args.re_sched,
                    jobfile=args.jobfile,
+                   exportdir=args.export,
                    hub=args.hub)
 
     for ret in jk.watch_jobs(delay=args.sleep,
