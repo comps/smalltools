@@ -333,11 +333,17 @@ if __name__ == '__main__':
         if not args.hub:
             raise RuntimeError("unable to get Beaker hub URL, try --hub")
 
+    logging_fmt = '%(asctime)s %(levelname)s: %(message)s'
+    logging_datefmt = '%Y-%m-%d %H:%M:%S'
     if args.verbose >= 2:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG,
+                            format=logging_fmt,
+                            datefmt=logging_datefmt)
         logging.getLogger('urllib3').setLevel(logging.WARNING)
     elif args.verbose == 1:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.INFO,
+                            format=logging_fmt,
+                            datefmt=logging_datefmt)
 
     jk = JobKeeper(statefile=args.state,
                    resched=args.re_sched,
