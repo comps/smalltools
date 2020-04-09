@@ -52,7 +52,8 @@ class StateFile:
                 return dict()
 
 class JobKeeper:
-    def __init__(self, hub, jobfile, statefile=None, resched=None, exportdir=None):
+    def __init__(self, hub, jobfile, statefile=None, resched=None,
+                 nosys_delay=None, exportdir=None):
         self.session = requests.Session()
         self.session.headers.update({'Accept': 'application/json'})
         self.hub = hub
@@ -62,9 +63,13 @@ class JobKeeper:
         self.queued = None
         self.queued_time = None
         self.queued_delta_max = None
+        self.nosys_time = None
+        self.nosys_delta_max = None
         self.exportdir = exportdir
         if resched:
             self.queued_delta_max = timedelta(seconds=resched)
+        if nosys_delay:
+            self.nosys_delta_max = timedelta(seconds=nosys_delay)
         if statefile:
             self._load_state(statefile)
         if exportdir:
@@ -74,19 +79,26 @@ class JobKeeper:
     def _load_state(self, path):
         self.state = StateFile(path)
         data = self.state.load()
-        if 'queued' in data and 'running' in data:
+        timefmt = '%Y-%m-%dT%H:%M:%S.%f'
+        if 'queued' in data:
             self.queued = data['queued']
-            self.queued_time = datetime.strptime(data['queued_time'],
-                                                 '%Y-%m-%dT%H:%M:%S.%f')
+        if 'queued_time' in data and data['queued_time'] is not None:
+            self.queued_time = datetime.strptime(data['queued_time'], timefmt)
+        if 'nosys_time' in data and data['nosys_time'] is not None:
+            self.nosys_time = datetime.strptime(data['nosys_time'], timefmt)
+        if 'running' in data:
             self.running = set(data['running'])
 
     def _save_state(self):
+        timefmt = '%Y-%m-%dT%H:%M:%S.%f'
         if self.state:
-            data = {
-                'queued': self.queued,
-                'queued_time': self.queued_time.strftime('%Y-%m-%dT%H:%M:%S.%f'),
-                'running': list(self.running),
-            }
+            data = {}
+            data['queued'] = self.queued
+            if self.queued_time is not None:
+                data['queued_time'] = self.queued_time.strftime(timefmt)
+            if self.nosys_time is not None:
+                data['nosys_time'] = self.nosys_time.strftime(timefmt)
+            data['running'] = list(self.running)
             self.state.save(data)
 
     def _submit_job(self):
@@ -131,7 +143,41 @@ class JobKeeper:
             return None
         return r.json()
 
-    def watch_jobs(self, max_running, delay, noloop=False):
+    def _aborted_with_nosystems(self, jdata):
+        """Return True if any task in any recipe of the job did not match any
+        systems."""
+        for rs in jdata['recipesets']:
+            for r in rs['machine_recipes']:
+                if r['status'] != 'Aborted':
+                    continue
+                rdata = self._query_bkr(r['id'], 'recipes')
+                if rdata:
+                    nosystems = False
+                    if rdata['status'] != 'Aborted':
+                        continue
+                    for t in rdata['tasks']:
+                        if t['status'] != 'Aborted':
+                            continue
+                        for res in t['results']:
+                            if 'does not match any systems' in res['message']:
+                                return True
+        return False
+
+    def _queued_overtime(self):
+        if self.queued_time is None or self.queued_delta_max is None:
+            return False
+        if datetime.utcnow() - self.queued_time > self.queued_delta_max:
+            return True
+        return False
+
+    def _nosys_wait(self):
+        if self.nosys_time is None or self.nosys_delta_max is None:
+            return False
+        if datetime.utcnow() - self.nosys_time < self.nosys_delta_max:
+            return True
+        return False
+
+    def watch_jobs(self, max_running, delay, noloop=False, nosys_suppress=False):
         while True:
             logging.debug(f"========================================")
             running_cnt = len(self.running)
@@ -148,9 +194,14 @@ class JobKeeper:
                     logging.debug(f"running job {job} is finished:{finished} with {status}/{result}")
                     if finished:
                         self.running.remove(job)
-                        self._export_job(job, jdata)
-                        logging.info(f"yielding finished {(job, status, result)}")
-                        yield (job, status, result)
+                        aborted_nosys = self._aborted_with_nosystems(jdata)
+                        if aborted_nosys:
+                            logging.info(f"running job {job} aborted with nosystems")
+                            self.nosys_time = datetime.utcnow()
+                        if not aborted_nosys or (aborted_nosys and not nosys_suppress):
+                            self._export_job(job, jdata)
+                            logging.info(f"yielding finished {(job, status, result)}")
+                            yield (job, status, result)
                         self._save_state()
                 logging.debug(f"sleeping for {one_sleep:.2f} sec")
                 time.sleep(one_sleep)
@@ -162,21 +213,25 @@ class JobKeeper:
                     logging.info(f"moving queued job {self.queued} to running queue")
                     self.running.add(self.queued)
                     self.queued = None
+                    self.queued_time = None
                     self._save_state()
                 else:
                     # cancel queued job if it's taking too long
-                    if self.queued_delta_max:
-                        if datetime.utcnow() - self.queued_time > self.queued_delta_max:
-                            logging.info(f"queued job {self.queued} took too long, cancelling it")
-                            self._cancel_job(self.queued)
+                    if self._queued_overtime():
+                        logging.info(f"queued job {self.queued} took too long, cancelling it")
+                        self._cancel_job(self.queued)
             # if we were unable (yet) to schedule a Queued job, try now
             if self.queued is None:
                 logging.debug(f"queued job is null, running:{len(self.running)} < max:{max_running}")
                 if len(self.running) < max_running:
-                    self.queued = self._submit_job()
-                    self.queued_time = datetime.utcnow()
-                    self._save_state()
-                    logging.info(f"queued job submitted: {self.queued}")
+                    if self._nosys_wait():
+                        logging.debug(f"nosys timeout in effect, NOT submitting new Queued job")
+                    else:
+                        self.queued = self._submit_job()
+                        self.queued_time = datetime.utcnow()
+                        self.nosys_time = None
+                        self._save_state()
+                        logging.info(f"queued job submitted: {self.queued}")
             # if we didn't sleep in self.running loop, sleep now
             if running_cnt == 0:
                 logging.debug(f"sleeping for {one_sleep:.2f} sec")
@@ -232,14 +287,25 @@ if __name__ == '__main__':
         Note that --oneshot doesn't make sense without --state.
 
         To prevent the Queued job from becoming stale (ie. with a hostRequire condition
-        that never matches), cancel and re-submit the job --re-sched seconds after the
-        initial submission. As stated above, this re-reads and submits a fresh job xml.
+        matches a long-time Loaned system), cancel and re-submit the job --re-sched
+        seconds after the initial submission. As stated above, this re-reads and submits
+        a fresh job xml.
+
+        Similarly, if a hostRequire condition doesn't match any systems, the job Aborts
+        with 'No matching system(s) found'. Use --nosys-delay to suspend submitting of
+        a new Queued task for a while (ie. until your script updates job xml).
+        Note that it takes 1 cycle for a Queued job to be moved to a Running list and
+        1 another cycle to process its result, so there will always be one extra Queued
+        job aborted, submitted during the first cycle.
 
         Errors/warnings/debug go to stderr, finished jobs to stdout as space-delimited
         triples of jobid, status and result, ie. '12345 Completed Fail'.
 
         For more details about finished job, use --export with a pre-existing directory
         into which ${jobid}.json files will be saved before being reported on stdout.
+
+        To avoid 'No matching system(s) found' jobs on stdout and in --export, use
+        --nosys-suppress. Useful for filtering out common Aborts.
         """)
     parser = argparse.ArgumentParser(description='Keep a Beaker job always available (Queued).',
                                      epilog=epilog,
@@ -250,6 +316,8 @@ if __name__ == '__main__':
     parser.add_argument('--sleep', metavar='N', type=int, default=60, help='extra secs spent sleeping in each loop')
     parser.add_argument('--max-running', metavar='N', type=int, default=2, help='maximum allowed Running jobs at any time')
     parser.add_argument('--re-sched', metavar='N', type=int, help='cancel and re-submit Queued task after N secs')
+    parser.add_argument('--nosys-delay', metavar='N', type=int, help='don\'t submit Queued task N sec after \'No systems found\'')
+    parser.add_argument('--nosys-suppress', action='store_true', help='don\'t output nosys-Aborted task details on stdout')
     parser.add_argument('--export', metavar='DIR', help='export completed jobs as JSON files')
     parser.add_argument('--hub', metavar='URL', help='override autodetected Beaker hub URL')
     parser.add_argument('jobfile', metavar='job-file.xml', help='a Beaker job XML file path')
@@ -273,12 +341,14 @@ if __name__ == '__main__':
 
     jk = JobKeeper(statefile=args.state,
                    resched=args.re_sched,
+                   nosys_delay=args.nosys_delay,
                    jobfile=args.jobfile,
                    exportdir=args.export,
                    hub=args.hub)
 
     for ret in jk.watch_jobs(delay=args.sleep,
                              max_running=args.max_running,
-                             noloop=args.oneshot):
+                             noloop=args.oneshot,
+                             nosys_suppress=args.nosys_suppress):
         if ret:
             print(' '.join(str(x) for x in ret))
