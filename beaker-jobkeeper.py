@@ -292,8 +292,9 @@ if __name__ == '__main__':
         a fresh job xml.
 
         Similarly, if a hostRequire condition doesn't match any systems, the job Aborts
-        with 'No matching system(s) found'. Use --nosys-delay to suspend submitting of
-        a new Queued task for a while (ie. until your script updates job xml).
+        with 'Recipe .. does not match any systems'. Use --nosys-delay to suspend
+        submitting of a new Queued task for a while (ie. until your script updates job
+        xml).
         Note that it takes 1 cycle for a Queued job to be moved to a Running list and
         1 another cycle to process its result, so there will always be one extra Queued
         job aborted, submitted during the first cycle.
@@ -304,7 +305,7 @@ if __name__ == '__main__':
         For more details about finished job, use --export with a pre-existing directory
         into which ${jobid}.json files will be saved before being reported on stdout.
 
-        To avoid 'No matching system(s) found' jobs on stdout and in --export, use
+        To avoid 'does not match any systems' jobs on stdout and in --export, use
         --nosys-suppress. Useful for filtering out common Aborts.
         """)
     parser = argparse.ArgumentParser(description='Keep a Beaker job always available (Queued).',
