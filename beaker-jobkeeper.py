@@ -200,8 +200,8 @@ class JobKeeper:
                             self.nosys_time = datetime.utcnow()
                         if not aborted_nosys or (aborted_nosys and not nosys_suppress):
                             self._export_job(job, jdata)
-                            logging.info(f"yielding finished {(job, status, result)}")
-                            yield (job, status, result)
+                            logging.info(f"yielding finished {(job, status, result, len(self.running)+1)}")
+                            yield (job, status, result, len(self.running)+1)
                         self._save_state()
                 logging.debug(f"sleeping for {one_sleep:.2f} sec")
                 time.sleep(one_sleep)
@@ -300,7 +300,9 @@ if __name__ == '__main__':
         job aborted, submitted during the first cycle.
 
         Errors/warnings/debug go to stderr, finished jobs to stdout as space-delimited
-        triples of jobid, status and result, ie. '12345 Completed Fail'.
+        quadruples of jobid/status/result/nr_running, ie. '12345 Completed Fail 10'.
+        The nr_running value includes the job that just finished and will, at most, be
+        equal to --max-running.
 
         For more details about finished job, use --export with a pre-existing directory
         into which ${jobid}.json files will be saved before being reported on stdout.
@@ -358,4 +360,4 @@ if __name__ == '__main__':
                              noloop=args.oneshot,
                              nosys_suppress=args.nosys_suppress):
         if ret:
-            print(' '.join(str(x) for x in ret))
+            print(' '.join(str(x) for x in ret), flush=True)
