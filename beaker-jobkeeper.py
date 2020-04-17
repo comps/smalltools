@@ -177,7 +177,8 @@ class JobKeeper:
             return True
         return False
 
-    def watch_jobs(self, max_running, delay, noloop=False, nosys_suppress=False):
+    def watch_jobs(self, max_running, delay, noloop=False, nosys_suppress=False,
+                   resched_suppress=False):
         while True:
             logging.debug(f"========================================")
             running_cnt = len(self.running)
@@ -220,6 +221,10 @@ class JobKeeper:
                     if self._queued_overtime():
                         logging.info(f"queued job {self.queued} took too long, cancelling it")
                         self._cancel_job(self.queued)
+                        # forget about it; don't ever move it to running
+                        if resched_suppress:
+                            self.queued = None
+                            self.queued_time = None
             # if we were unable (yet) to schedule a Queued job, try now
             if self.queued is None:
                 logging.debug(f"queued job is null, running:{len(self.running)} < max:{max_running}")
@@ -308,7 +313,8 @@ if __name__ == '__main__':
         into which ${jobid}.json files will be saved before being reported on stdout.
 
         To avoid 'does not match any systems' jobs on stdout and in --export, use
-        --nosys-suppress. Useful for filtering out common Aborts.
+        --nosys-suppress. Useful for filtering out common Aborts. To do the same for
+        jobs cancelled due to inactivity, add --re-sched-suppress.
         """)
     parser = argparse.ArgumentParser(description='Keep a Beaker job always available (Queued).',
                                      epilog=epilog,
@@ -319,6 +325,7 @@ if __name__ == '__main__':
     parser.add_argument('--sleep', metavar='N', type=int, default=60, help='extra secs spent sleeping in each loop')
     parser.add_argument('--max-running', metavar='N', type=int, default=2, help='maximum allowed Running jobs at any time')
     parser.add_argument('--re-sched', metavar='N', type=int, help='cancel and re-submit Queued task after N secs')
+    parser.add_argument('--re-sched-suppress', action='store_true', help='don\'t output resched-Cancelled task details on stdout')
     parser.add_argument('--nosys-delay', metavar='N', type=int, help='don\'t submit Queued task N sec after \'No systems found\'')
     parser.add_argument('--nosys-suppress', action='store_true', help='don\'t output nosys-Aborted task details on stdout')
     parser.add_argument('--export', metavar='DIR', help='export completed jobs as JSON files')
@@ -358,6 +365,7 @@ if __name__ == '__main__':
     for ret in jk.watch_jobs(delay=args.sleep,
                              max_running=args.max_running,
                              noloop=args.oneshot,
-                             nosys_suppress=args.nosys_suppress):
+                             nosys_suppress=args.nosys_suppress,
+                             resched_suppress=args.re_sched_suppress):
         if ret:
             print(' '.join(str(x) for x in ret), flush=True)
