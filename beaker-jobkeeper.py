@@ -152,13 +152,14 @@ class JobKeeper:
                     continue
                 rdata = self._query_bkr(r['id'], 'recipes')
                 if rdata:
-                    nosystems = False
-                    if rdata['status'] != 'Aborted':
+                    if rdata['status'] != 'Aborted' or 'tasks' not in rdata:
                         continue
                     for t in rdata['tasks']:
-                        if t['status'] != 'Aborted':
+                        if t['status'] != 'Aborted' or 'results' not in t:
                             continue
                         for res in t['results']:
+                            if not 'message' in res or res['message'] is None:
+                                continue
                             if 'does not match any systems' in res['message']:
                                 return True
         return False
