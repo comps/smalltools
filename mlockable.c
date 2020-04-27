@@ -51,8 +51,9 @@ size_t min_lockable(size_t max)
 
     for (; max != 0; max -= pagesize) {
         mmapped = mmap(NULL, max, PROT_READ | PROT_WRITE,
-                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_LOCKED, -1, 0);
-        if (mmapped != (void *)-1) {
+                       MAP_PRIVATE | MAP_ANONYMOUS |
+                       MAP_NORESERVE | MAP_LOCKED, -1, 0);
+        if (mmapped != MAP_FAILED) {
             munmap(mmapped, max);
             break;
         }
