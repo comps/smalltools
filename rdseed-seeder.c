@@ -21,13 +21,14 @@
  * all data as valid entropy
  *
  * to build:
- *   gcc -Wall -Wextra -mrdrnd -o rdrand-seeder rdrand-seeder.c
+ *   gcc -Wall -Wextra -mrdseed -o rdseed-seeder rdseed-seeder.c
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <linux/random.h>
@@ -41,6 +42,27 @@
 
 /* uncomment to write raw bytes to stdout, for statistical analysis */
 //#define DATA_TO_STDOUT
+
+/*
+ * about _rdseed*_step():
+ *
+ * The generated random value is written to the given memory location and
+ * the success status is returned. Returns '1' if the hardware returns
+ * a random 16/32/64 bit value (success). Returns '0' otherwise (failure).
+ *
+ * https://software.intel.com/content/www/us/en/develop/documentation/cpp-compiler-developer-guide-and-reference/top/compiler-reference/intrinsics/intrinsics-for-later-generation-intel-core-processor-instruction-extensions/intrinsics-that-generate-random-numbers-of-16-32-64-bit-wide-random-integers/rdseed16-step-rdseed32-step-rdseed64-step.html
+ */
+uint32_t get_rdseed_val(uint32_t *dest)
+{
+    /* try hard, but fail if it truly doesn't work */
+    int ret, attempts = 0;
+    do {
+        if (attempts > 0)
+            usleep(10*1000);
+        ret = _rdseed32_step(dest);
+    } while (ret != 1 && attempts++ < 100);
+    return ret;
+}
 
 int main()
 {
@@ -60,28 +82,13 @@ int main()
         goto err;
     }
 
-    /*
-     * about _rdrand*_step():
-     *
-     * These intrinsics generate random numbers of 16/32/64 bit wide random
-     * integers. The generated random value is written to the given memory
-     * location and the success status is returned: '1' if the hardware
-     * returned a valid random value, and '0' otherwise.
-     *
-     * https://software.intel.com/content/www/us/en/develop/documentation/cpp-compiler-developer-guide-and-reference/top/compiler-reference/intrinsics/intrinsics-for-later-generation-intel-core-processor-instruction-extensions/intrinsics-that-generate-random-numbers-of-16-32-64-bit-wide-random-integers/rdrand16-step-rdrand32-step-rdrand64-step.html
-     */
-
     while (1) {
         /* sizeof(u32)/sizeof(uint8_t) == 4 */
         for (cnt = 0; cnt < RNG_BUFSIZE/4; cnt++) {
-            ret = _rdrand32_step(&rand_pool->buf[cnt]);
+            ret = get_rdseed_val(&rand_pool->buf[cnt]);
             if (ret != 1) {
-                /* try again */
-                ret = _rdrand32_step(&rand_pool->buf[cnt]);
-                if (ret != 1) {
-                    fprintf(stderr, "_rdrand32_step() failed");
-                    goto err;
-                }
+                fprintf(stderr, "_rdseed32_step() failed\n");
+                goto err;
             }
         }
 

@@ -80,14 +80,14 @@ int main()
 
     ret = kcapi_rng_init(&rng, "jitterentropy_rng", 0);
     if (ret) {
-        fprintf(stderr, "kcapi_rng_init() failed: %zd", ret);
+        fprintf(stderr, "kcapi_rng_init() failed: %zd\n", ret);
         goto err;
     }
 
     /* should be 0 as jitterentropy_rng shouldn't accept external seed */
     ret = kcapi_rng_seedsize(rng);
     if (ret) {
-        fprintf(stderr, "kcapi_rng_seedsize() returned %zd (!= 0)", ret);
+        fprintf(stderr, "kcapi_rng_seedsize() returned %zd (!= 0)\n", ret);
         goto err;
     }
 
@@ -99,14 +99,14 @@ int main()
     kcapi_memset_secure(crypto_buf, 0, sizeof(crypto_buf));
     ret = kcapi_rng_seed(rng, crypto_buf, 0);
     if (ret) {
-        fprintf(stderr, "kcapi_rng_seed() failed: %zd", ret);
+        fprintf(stderr, "kcapi_rng_seed() failed: %zd\n", ret);
         goto err;
     }
 
     while (1) {
         ret = kcapi_rng_generate(rng, crypto_buf, sizeof(crypto_buf));
         if (ret < 0) {
-            fprintf(stderr, "kcapi_rng_generate() failed");
+            fprintf(stderr, "kcapi_rng_generate() failed\n");
             goto err;
         }
         fprintf(stderr, "got %zd bytes from jitterentropy_rng\n", ret);
