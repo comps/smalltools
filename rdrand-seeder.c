@@ -36,8 +36,8 @@
 /* in bytes, must be divisible both by 4 (u32) */
 #define RNG_BUFSIZE 128
 
-/* uncomment to stop when the kernel entropy pool gets reasonably full */
-//#define STOP_WHEN_ABOVE 4000
+/* comment out to run forever */
+#define STOP_WHEN_ABOVE 4000
 
 /* uncomment to write raw bytes to stdout, for statistical analysis */
 //#define DATA_TO_STDOUT
@@ -111,7 +111,7 @@ int main()
             break;
 #endif
 
-        usleep(100*1000);
+        usleep(10*1000);
     }
 
     close(random_fd);

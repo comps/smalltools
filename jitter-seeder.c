@@ -23,7 +23,7 @@
  * inspired by libkcapi's apps/kcapi-rng.c
  *
  * to build:
- *   cc -Wall -Wextra -o kcapi-seeder kcapi-seeder.c -lkcapi
+ *   cc -Wall -Wextra -o jitter-seeder jitter-seeder.c -lkcapi
  */
 
 #include <stdio.h>
@@ -38,8 +38,8 @@
 /* from kcapi-rng.c ; divisible by 4 because struct rand_pool_info uses u32 */
 #define KCAPI_RNG_BUFSIZE 128
 
-/* uncomment to stop when the kernel entropy pool gets reasonably full */
-//#define STOP_WHEN_ABOVE 4000
+/* comment out to run forever */
+#define STOP_WHEN_ABOVE 4000
 
 /* uncomment to write raw bytes to stdout, for statistical analysis */
 //#define DATA_TO_STDOUT
@@ -142,7 +142,7 @@ int main()
             break;
 #endif
 
-        usleep(100*1000);
+        usleep(10*1000);
     }
 
     kcapi_rng_destroy(rng);
