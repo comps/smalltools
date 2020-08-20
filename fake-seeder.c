@@ -25,12 +25,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <linux/random.h>
-#include <kcapi.h>
 
 /* how much bits to credit in one cycle */
 #define ENTROPY_COUNT 1000
